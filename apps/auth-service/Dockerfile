@@ -1,5 +1,5 @@
 # ─── Stage 1: deps ────────────────────────────────────────────────────────────
-FROM node:20-alpine AS deps
+FROM node:26-alpine AS deps
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
@@ -20,7 +20,7 @@ RUN pnpm --filter=@nexcrm/database prisma generate
 RUN pnpm --filter=@nexcrm/auth-service build
 
 # ─── Stage 3: runner ──────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:26-alpine AS runner
 RUN apk add --no-cache dumb-init && \
     addgroup --system --gid 1001 nestjs && \
     adduser --system --uid 1001 nestjs
