@@ -1,0 +1,184 @@
+version: '3.9'
+
+networks:
+  nexcrm-dev:
+    driver: bridge
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+  rabbitmq_dev_data:
+  pgadmin_dev_data:
+
+services:
+  # ─── Databases ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexcrm_postgres_dev
+    environment:
+      POSTGRES_DB: nexcrm_dev
+      POSTGRES_USER: nexcrm
+      POSTGRES_PASSWORD: nexcrm_dev_secret
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./infra/docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nexcrm -d nexcrm_dev']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nexcrm-dev
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: nexcrm_pgadmin_dev
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@nexcrm.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - '5050:80'
+    volumes:
+      - pgadmin_dev_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nexcrm-dev
+    restart: unless-stopped
+
+  # ─── Cache ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: nexcrm_redis_dev
+    command: redis-server --requirepass nexcrm_redis_dev --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_dev_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', 'nexcrm_redis_dev', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nexcrm-dev
+    restart: unless-stopped
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: nexcrm_redis_commander_dev
+    environment:
+      REDIS_HOSTS: 'local:redis:6379:0:nexcrm_redis_dev'
+    ports:
+      - '8081:8081'
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - nexcrm-dev
+    restart: unless-stopped
+
+  # ─── Message Broker ───────────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: nexcrm_rabbitmq_dev
+    environment:
+      RABBITMQ_DEFAULT_USER: nexcrm
+      RABBITMQ_DEFAULT_PASS: nexcrm_rmq_dev
+      RABBITMQ_DEFAULT_VHOST: nexcrm
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    volumes:
+      - rabbitmq_dev_data:/var/lib/rabbitmq
+      - ./infra/docker/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./infra/docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - nexcrm-dev
+    restart: unless-stopped
+
+  # ─── Observability ────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: nexcrm_prometheus_dev
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - '9090:9090'
+    volumes:
+      - ./infra/monitoring/prometheus/prometheus.dev.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - nexcrm-dev
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: nexcrm_grafana_dev
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    ports:
+      - '3100:3000'
+    volumes:
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - nexcrm-dev
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: nexcrm_loki_dev
+    ports:
+      - '3200:3100'
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - nexcrm-dev
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.4.0
+    container_name: nexcrm_tempo_dev
+    command: ['-config.file=/etc/tempo.yaml']
+    volumes:
+      - ./infra/monitoring/tempo/tempo.yaml:/etc/tempo.yaml:ro
+    ports:
+      - '3110:3200'
+      - '4317:4317'
+      - '4318:4318'
+    networks:
+      - nexcrm-dev
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.97.0
+    container_name: nexcrm_otel_dev
+    command: ['--config=/etc/otel/config.yaml']
+    volumes:
+      - ./infra/monitoring/otel/config.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - '4319:4317'
+      - '4320:4318'
+      - '8888:8888'
+      - '8889:8889'
+    depends_on:
+      - loki
+      - tempo
+    networks:
+      - nexcrm-dev
+    restart: unless-stopped

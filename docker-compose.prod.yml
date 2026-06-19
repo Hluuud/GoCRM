@@ -1,0 +1,203 @@
+version: '3.9'
+
+networks:
+  nexcrm-prod:
+    driver: bridge
+
+services:
+  # ─── API Gateway ─────────────────────────────────────────────────────────────
+  api-gateway:
+    build:
+      context: .
+      dockerfile: apps/api-gateway/Dockerfile
+    container_name: nexcrm_api_gateway
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+    ports:
+      - '3001:3001'
+    depends_on:
+      - redis
+      - rabbitmq
+    networks:
+      - nexcrm-prod
+    restart: always
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ─── Auth Service ─────────────────────────────────────────────────────────────
+  auth-service:
+    build:
+      context: .
+      dockerfile: apps/auth-service/Dockerfile
+    container_name: nexcrm_auth_service
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - nexcrm-prod
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ─── CRM Service ─────────────────────────────────────────────────────────────
+  crm-service:
+    build:
+      context: .
+      dockerfile: apps/crm-service/Dockerfile
+    container_name: nexcrm_crm_service
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3003
+    depends_on:
+      - postgres
+      - rabbitmq
+    networks:
+      - nexcrm-prod
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # ─── Finance Service ──────────────────────────────────────────────────────────
+  finance-service:
+    build:
+      context: .
+      dockerfile: apps/finance-service/Dockerfile
+    container_name: nexcrm_finance_service
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3004
+    depends_on:
+      - postgres
+    networks:
+      - nexcrm-prod
+    restart: always
+
+  # ─── Notification Service ─────────────────────────────────────────────────────
+  notification-service:
+    build:
+      context: .
+      dockerfile: apps/notification-service/Dockerfile
+    container_name: nexcrm_notification_service
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3005
+    depends_on:
+      - rabbitmq
+    networks:
+      - nexcrm-prod
+    restart: always
+
+  # ─── AI Service ──────────────────────────────────────────────────────────────
+  ai-service:
+    build:
+      context: .
+      dockerfile: apps/ai-service/Dockerfile
+    container_name: nexcrm_ai_service
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3006
+    networks:
+      - nexcrm-prod
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+
+  # ─── Workflow Service ─────────────────────────────────────────────────────────
+  workflow-service:
+    build:
+      context: .
+      dockerfile: apps/workflow-service/Dockerfile
+    container_name: nexcrm_workflow_service
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3007
+    depends_on:
+      - redis
+      - rabbitmq
+    networks:
+      - nexcrm-prod
+    restart: always
+
+  # ─── Infrastructure ───────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    networks:
+      - nexcrm-prod
+    restart: always
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER}']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_prod_data:/data
+    networks:
+      - nexcrm-prod
+    restart: always
+
+  rabbitmq:
+    image: rabbitmq:3.13-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST}
+    volumes:
+      - rabbitmq_prod_data:/var/lib/rabbitmq
+    networks:
+      - nexcrm-prod
+    restart: always
+
+  # ─── Reverse Proxy ────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: nexcrm_nginx
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./infra/nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api-gateway
+    networks:
+      - nexcrm-prod
+    restart: always
+
+volumes:
+  postgres_prod_data:
+  redis_prod_data:
+  rabbitmq_prod_data:

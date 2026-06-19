@@ -1,0 +1,17 @@
+{
+  "name": "@nexcrm/types",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared TypeScript interfaces, DTOs and types for NexCRM",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:docker": "tsc -p tsconfig.json",
+    "lint": "eslint src/ --ext .ts",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.4"
+  }
+}

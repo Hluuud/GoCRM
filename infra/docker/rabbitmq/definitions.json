@@ -1,0 +1,100 @@
+{
+  "vhosts": [
+    { "name": "nexcrm" }
+  ],
+  "exchanges": [
+    {
+      "name": "nexcrm.events",
+      "vhost": "nexcrm",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false
+    },
+    {
+      "name": "notification_dlx",
+      "vhost": "nexcrm",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false
+    },
+    {
+      "name": "crm_dlx",
+      "vhost": "nexcrm",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false
+    }
+  ],
+  "queues": [
+    {
+      "name": "notification_queue",
+      "vhost": "nexcrm",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "notification_dlx",
+        "x-dead-letter-routing-key": "notification_dlq",
+        "x-message-ttl": 86400000
+      }
+    },
+    {
+      "name": "notification_dlq",
+      "vhost": "nexcrm",
+      "durable": true,
+      "auto_delete": false
+    },
+    {
+      "name": "crm_events_queue",
+      "vhost": "nexcrm",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "crm_dlx",
+        "x-dead-letter-routing-key": "crm_dlq",
+        "x-message-ttl": 86400000
+      }
+    },
+    {
+      "name": "crm_dlq",
+      "vhost": "nexcrm",
+      "durable": true,
+      "auto_delete": false
+    },
+    {
+      "name": "workflow_queue",
+      "vhost": "nexcrm",
+      "durable": true,
+      "auto_delete": false
+    }
+  ],
+  "bindings": [
+    {
+      "source": "nexcrm.events",
+      "vhost": "nexcrm",
+      "destination": "crm_events_queue",
+      "destination_type": "queue",
+      "routing_key": "crm.#"
+    },
+    {
+      "source": "nexcrm.events",
+      "vhost": "nexcrm",
+      "destination": "notification_queue",
+      "destination_type": "queue",
+      "routing_key": "#"
+    },
+    {
+      "source": "notification_dlx",
+      "vhost": "nexcrm",
+      "destination": "notification_dlq",
+      "destination_type": "queue",
+      "routing_key": "notification_dlq"
+    },
+    {
+      "source": "crm_dlx",
+      "vhost": "nexcrm",
+      "destination": "crm_dlq",
+      "destination_type": "queue",
+      "routing_key": "crm_dlq"
+    }
+  ]
+}
